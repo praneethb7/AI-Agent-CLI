@@ -1,8 +1,12 @@
 import axios, { type AxiosInstance, isAxiosError } from "axios";
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 }
 
 export interface ChatResponse {
@@ -20,6 +24,7 @@ export interface GroqClientConfig {
   apiKey: string;
   baseUrl?: string | undefined;
   model?: string | undefined;
+  visionModel?: string | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   maxRetries?: number | undefined;
@@ -52,12 +57,14 @@ function parseRetryAfterMs(message: string): number {
 export class GroqService {
   private readonly client: AxiosInstance;
   private readonly model: string;
+  private readonly visionModel: string;
   private readonly temperature: number;
   private readonly maxTokens: number;
   private readonly maxRetries: number;
 
   constructor(config: GroqClientConfig) {
     this.model = config.model ?? "llama-3.3-70b-versatile";
+    this.visionModel = config.visionModel ?? "meta-llama/llama-4-scout-17b-16e-instruct";
     this.temperature = config.temperature ?? 0.3; // lower = more deterministic JSON
     // Agent only outputs a small JSON object — 512 tokens is ample.
     // Reserving 4096 consumed the entire TPM budget in 2 calls.
@@ -74,7 +81,11 @@ export class GroqService {
     });
   }
 
-  async chat(messages: ChatMessage[]): Promise<ChatResponse> {
+  async chat(messages: ChatMessage[], maxTokensOverride?: number): Promise<ChatResponse> {
+    const hasImages = messages.some(
+      (m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url")
+    );
+    const model = hasImages ? this.visionModel : this.model;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
@@ -82,10 +93,10 @@ export class GroqService {
         const response = await this.client.post<GroqAPIResponse>(
           "/chat/completions",
           {
-            model: this.model,
+            model,
             messages,
             temperature: this.temperature,
-            max_tokens: this.maxTokens,
+            max_tokens: maxTokensOverride ?? this.maxTokens,
           }
         );
 

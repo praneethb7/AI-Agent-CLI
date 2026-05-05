@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import { extname } from "node:path";
 import chalk from "chalk";
-import { type ChatMessage, type GroqService } from "../services/groq.js";
+import { type ChatMessage, type ContentPart, type GroqService } from "../services/groq.js";
 import { type ToolRegistry } from "../tools/registry.js";
 import { AgentMemory, type MemoryOptions } from "./memory.js";
 import { Planner } from "./planner.js";
 import { logger } from "../utils/logger.js";
+import { analyzeImageLayout, type ImageLayout } from "../utils/imageProcessor.js";
 
 export interface AgentLoopOptions extends MemoryOptions {
   maxIterations?: number | undefined;
@@ -36,6 +39,7 @@ export class AgentLoop {
   steps: AgentStep[] = [];
   createdFiles: string[] = [];
   lastResult: string | null = null;
+  private imageAnalysis?: ImageLayout;
 
   constructor(
     groq: GroqService,
@@ -57,14 +61,34 @@ export class AgentLoop {
    * the loop executes the named tool and feeds the observation back until the
    * LLM emits action="finish" or the iteration cap is hit.
    */
-  async runAgent(userInput: string): Promise<AgentLoopResult> {
+  async runAgent(userInput: string, imagePath?: string): Promise<AgentLoopResult> {
     this.steps = [];
     this.createdFiles = [];
     this.lastResult = null;
 
+    // Pre-analyze the image so ALL details can be injected into tool args at execution time
+    if (imagePath) {
+      logger.raw(chalk.dim("  Analyzing image…\n"));
+      this.imageAnalysis = await analyzeImageLayout(imagePath, this.groq);
+      const ia = this.imageAnalysis;
+      logger.raw(
+        chalk.dim(
+          `  Detected: layout=${ia.layout}, theme=${ia.theme}, primary=${ia.styleHints.primaryColor}, sections=[${ia.sections.join(",")}]\n`
+        )
+      );
+      if (ia.pageData?.nav?.brandName) {
+        logger.raw(chalk.dim(`  Brand: ${ia.pageData.nav.brandName}\n`));
+      }
+    }
+    const imageLayout = this.imageAnalysis;
+
+    const userContent = imagePath
+      ? this.buildImageContent(userInput, imagePath)
+      : userInput;
+
     const messages: ChatMessage[] = [
-      { role: "system", content: this.buildStructuredSystemPrompt() },
-      { role: "user", content: userInput },
+      { role: "system", content: this.buildStructuredSystemPrompt(imageLayout) },
+      { role: "user", content: userContent },
     ];
 
     const recentActions: string[] = [];
@@ -190,18 +214,49 @@ export class AgentLoop {
     return { iterations, finalResponse };
   }
 
+  private mergeImageAnalysis(action: string, args: Record<string, unknown>): Record<string, unknown> {
+    const ia = this.imageAnalysis;
+    if (!ia) return args;
+
+    if (action === "generateHTML") {
+      return {
+        ...args,
+        layout: ia.layout,
+        theme: ia.theme,
+        sections: ia.sections,
+        ...(ia.pageData ? { pageData: ia.pageData } : {}),
+      };
+    }
+
+    if (action === "generateCSS") {
+      const existing = (args["styleHints"] as Record<string, unknown>) ?? {};
+      return {
+        ...args,
+        styleHints: {
+          ...existing,
+          background: ia.styleHints.background,
+          typography: ia.typography ?? { scale: ia.styleHints.typography },
+          ...(ia.colors ? { colorPalette: ia.colors } : { primaryColor: ia.styleHints.primaryColor }),
+        },
+      };
+    }
+
+    return args;
+  }
+
   private async executeWithRetry(
     action: string,
     args: Record<string, unknown>,
     _raw: string,
     _messages: ChatMessage[]
   ): Promise<string> {
+    const mergedArgs = this.mergeImageAnalysis(action, args);
     let observation = "";
     let succeeded = false;
 
     for (let attempt = 1; attempt <= MAX_TOOL_RETRIES + 1; attempt++) {
       try {
-        const result = await this.registry.execute(action, args);
+        const result = await this.registry.execute(action, mergedArgs);
         if (result.success) {
           observation = result.result ?? "success";
           succeeded = true;
@@ -254,20 +309,65 @@ export class AgentLoop {
     return raw.trim();
   }
 
-  private buildStructuredSystemPrompt(): string {
+  private buildImageContent(text: string, imagePath: string): ContentPart[] {
+    const ext = extname(imagePath).toLowerCase().slice(1);
+    const mimeMap: Record<string, string> = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      bmp: "image/bmp",
+    };
+    const mime = mimeMap[ext] ?? "image/png";
+    const base64 = readFileSync(imagePath).toString("base64");
+    return [
+      { type: "text", text },
+      { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } },
+    ];
+  }
+
+  private buildStructuredSystemPrompt(imageLayout?: ImageLayout): string {
     const toolNames = [...this.registry.list(), "finish"].join("|");
 
-    // Intentionally terse — every token here costs TPM on every call.
-    return [
+    const base = [
       "AI agent. Reply ONLY with one JSON object, no prose:",
       '{"thought":"…","action":"…","args":{…},"message":"…(finish only)"}',
       `action ∈ ${toolNames}`,
       "finish only after real work; include message.",
       "Website task order: generateHTML(index.html) → generateCSS(styles.css) → generateJS(script.js) → finish.",
-      'generateHTML args: {"filename":"index.html"}',
-      'generateCSS args: {"filename":"styles.css"}',
-      'generateJS args: {"filename":"script.js","features":["navbarToggle","smoothScroll","buttonInteraction"]}',
-    ].join("\n");
+    ];
+
+    if (imageLayout) {
+      const { layout, theme, sections, styleHints } = imageLayout;
+      // Inject the analyzed values as the exact args the agent must use
+      base.push(
+        `generateHTML args: ${JSON.stringify({
+          filename: "index.html",
+          layout,
+          theme,
+          sections,
+        })}`,
+        `generateCSS args: ${JSON.stringify({
+          filename: "styles.css",
+          styleHints: {
+            primaryColor: styleHints.primaryColor,
+            background: styleHints.background,
+            typography: { scale: styleHints.typography },
+          },
+        })}`,
+        'generateJS args: {"filename":"script.js","features":["navbarToggle","smoothScroll","buttonInteraction"]}',
+        "Use EXACTLY the layout/theme/styleHints args above — they were extracted from the reference image.",
+      );
+    } else {
+      base.push(
+        'generateHTML args: {"filename":"index.html"}',
+        'generateCSS args: {"filename":"styles.css"}',
+        'generateJS args: {"filename":"script.js","features":["navbarToggle","smoothScroll","buttonInteraction"]}',
+      );
+    }
+
+    return base.join("\n");
   }
 
   private async executeTools(

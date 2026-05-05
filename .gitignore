@@ -26,3 +26,6 @@ Thumbs.db
 
 # Output directory
 output/
+
+# image 
+scaler.png

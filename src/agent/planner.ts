@@ -1,6 +1,7 @@
-import { callGroq, type ChatMessage } from "../services/groq.js";
+import { callGroq, type ChatMessage, GroqService } from "../services/groq.js";
 import { type ToolRegistry } from "../tools/registry.js";
 import { parseToolCalls, type ToolCall } from "../utils/parser.js";
+import { analyzeImageLayout, type ImageLayout } from "../utils/imageProcessor.js";
 
 export interface Plan {
   thought: string;
@@ -19,6 +20,7 @@ export interface PlannerContext {
   }>;
   filesCreated: string[];
   lastToolResult: string | null;
+  imagePath?: string;
 }
 
 export interface NextStep {
@@ -29,10 +31,33 @@ export interface NextStep {
 
 const DONE_SIGNALS = ["task complete", "done.", "finished.", "no further steps"];
 
-const SYSTEM_PROMPT = `AI agent. One action at a time. Output strict JSON only:
+const BASE_SYSTEM_PROMPT = `AI agent. One action at a time. Output strict JSON only:
 {"thought":"…","action":"…","input":{…}}
 Actions: generate_html|generate_css|generate_js|write_file|read_file|edit_file|list_files|run_command|finish
 No markdown. No extra text.`;
+
+function buildSystemPrompt(layout?: ImageLayout): string {
+  if (!layout) return BASE_SYSTEM_PROMPT;
+
+  const layoutDescription = [
+    `Layout: ${layout.layout}`,
+    `Theme: ${layout.theme}`,
+    `Sections: ${layout.sections.join(", ")}`,
+    `Primary color: ${layout.styleHints.primaryColor}`,
+    `Background: ${layout.styleHints.background}`,
+    `Typography: ${layout.styleHints.typography}`,
+  ].join("\n");
+
+  return `${BASE_SYSTEM_PROMPT}
+
+Visual reference (extracted from image):
+${layoutDescription}
+
+You MUST follow this layout strictly.
+- Do NOT generate generic or default layouts
+- Match the hero structure, color scheme, and section order above
+- Use card-based UI components`;
+}
 
 /**
  * Interprets the raw LLM response and decides what to do next.
@@ -54,8 +79,11 @@ export class Planner {
    * Returns the raw model output (strict JSON string).
    */
   async getNextStep(context: PlannerContext): Promise<string> {
+    const layout = context.imagePath
+      ? await analyzeImageLayout(context.imagePath, GroqService.fromEnv())
+      : undefined;
     const messages: ChatMessage[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: buildSystemPrompt(layout) },
       { role: "user", content: buildContextMessage(context) },
     ];
 
@@ -103,8 +131,11 @@ export class Planner {
  * Builds context, calls Groq, and returns the raw JSON string.
  */
 export async function getNextStep(context: PlannerContext): Promise<string> {
+  const layout = context.imagePath
+    ? await analyzeImageLayout(context.imagePath, GroqService.fromEnv())
+    : undefined;
   const messages: Array<{ role: string; content: string }> = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: buildSystemPrompt(layout) },
     { role: "user", content: buildContextMessage(context) },
   ];
 

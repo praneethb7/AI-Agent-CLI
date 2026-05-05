@@ -1,4 +1,5 @@
 import * as readline from "node:readline/promises";
+import { existsSync } from "node:fs";
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
 import ora from "ora";
@@ -27,6 +28,16 @@ registry
 
 export interface ChatCommandOptions {
   maxIterations?: number | undefined;
+}
+
+const IMAGE_PATH_RE = /(?:^|\s)(\.{0,2}\/\S+\.(?:png|jpe?g|gif|webp|bmp))(?:\s|$)/i;
+
+function extractImagePath(raw: string): { userInput: string; imagePath?: string } {
+  const match = IMAGE_PATH_RE.exec(raw);
+  if (!match?.[1]) return { userInput: raw };
+  const imagePath = match[1].trim();
+  const userInput = raw.replace(match[1], "").trim();
+  return { userInput, imagePath };
 }
 
 function printBanner(): void {
@@ -64,12 +75,20 @@ export async function runChat(options: ChatCommandOptions = {}): Promise<void> {
         continue;
       }
 
+      const { userInput: prompt, imagePath } = extractImagePath(trimmed);
+
+      if (imagePath && !existsSync(imagePath)) {
+        console.log(chalk.red(`  Image not found: ${imagePath}`));
+        process.stdout.write("\n");
+        continue;
+      }
+
       const spinner = ora({ text: chalk.dim("Thinking…"), color: "cyan" }).start();
 
       try {
         spinner.stop();
         process.stdout.write("\n");
-        const result = await agent.runAgent(trimmed);
+        const result = await agent.runAgent(prompt, imagePath);
         console.log(chalk.dim(`  [${result.iterations} iteration(s)]`));
         process.stdout.write("\n");
       } catch (err) {
