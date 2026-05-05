@@ -1,31 +1,118 @@
 import { type Tool, type ToolInput, type ToolResult } from "./registry.js";
 import { writeFileTool } from "./writeFile.js";
 
+type Feature = "navbarToggle" | "smoothScroll" | "buttonInteraction";
+
 interface GenerateJSInput {
   filename: string;
-  code: string;
+  code?: string;
+  features?: Feature[];
   strict?: boolean;
 }
 
 function isGenerateJSInput(input: unknown): input is GenerateJSInput {
   if (typeof input !== "object" || input === null) return false;
   const i = input as Record<string, unknown>;
-  return typeof i["filename"] === "string" && typeof i["code"] === "string";
+  return typeof i["filename"] === "string";
+}
+
+// --- feature snippets ---
+
+const navbarToggleSnippet = `
+// Mobile navbar toggle
+(function () {
+  const toggle = document.querySelector('[data-nav-toggle]');
+  const menu = document.querySelector('[data-nav-menu]');
+  if (!toggle || !menu) return;
+
+  toggle.addEventListener('click', function () {
+    const isOpen = menu.classList.toggle('is-open');
+    toggle.setAttribute('aria-expanded', String(isOpen));
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!menu.contains(e.target) && !toggle.contains(e.target)) {
+      menu.classList.remove('is-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+}());`.trimStart();
+
+const smoothScrollSnippet = `
+// Smooth scrolling for anchor links
+(function () {
+  document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
+    anchor.addEventListener('click', function (e) {
+      const target = document.querySelector(this.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: true });
+    });
+  });
+}());`.trimStart();
+
+const buttonInteractionSnippet = `
+// Button ripple / active feedback
+(function () {
+  document.querySelectorAll('button, [role="button"], .btn').forEach(function (btn) {
+    btn.addEventListener('pointerdown', function (e) {
+      btn.classList.add('btn--active');
+    });
+    btn.addEventListener('pointerup', function () {
+      btn.classList.remove('btn--active');
+    });
+    btn.addEventListener('pointerleave', function () {
+      btn.classList.remove('btn--active');
+    });
+  });
+}());`.trimStart();
+
+const FEATURE_MAP: Record<Feature, string> = {
+  navbarToggle: navbarToggleSnippet,
+  smoothScroll: smoothScrollSnippet,
+  buttonInteraction: buttonInteractionSnippet,
+};
+
+const ALL_FEATURES: Feature[] = ["navbarToggle", "smoothScroll", "buttonInteraction"];
+
+function buildCode(input: GenerateJSInput): string {
+  const parts: string[] = [];
+
+  const features = input.features && input.features.length > 0 ? input.features : ALL_FEATURES;
+  for (const feature of features) {
+    const snippet = FEATURE_MAP[feature];
+    if (snippet) parts.push(snippet);
+  }
+
+  if (input.code) {
+    parts.push(input.code);
+  }
+
+  return parts.join("\n\n");
 }
 
 export const generateJSTool: Tool = {
   name: "generateJS",
-  description: "Write JavaScript code to a file in the output directory.",
+  description:
+    "Write JavaScript code to a file in the output directory. " +
+    "Use 'features' to include built-in behaviours (navbarToggle, smoothScroll, buttonInteraction) " +
+    "and/or supply custom 'code'.",
   inputSchema: {
     filename: {
       type: "string",
       description: "Output filename, e.g. app.js",
       required: true,
     },
+    features: {
+      type: "array",
+      description:
+        "Built-in feature snippets to include: navbarToggle, smoothScroll, buttonInteraction.",
+    },
     code: {
       type: "string",
-      description: "The JavaScript source code to write.",
-      required: true,
+      description: "Additional custom JavaScript to append after feature snippets.",
     },
     strict: {
       type: "boolean",
@@ -35,7 +122,10 @@ export const generateJSTool: Tool = {
 
   async execute(raw: ToolInput): Promise<ToolResult> {
     if (!isGenerateJSInput(raw)) {
-      return { success: false, error: "Missing required fields: filename, code" };
+      return {
+        success: false,
+        error: "Missing required field: filename.",
+      };
     }
 
     const input = raw as GenerateJSInput;
@@ -47,7 +137,7 @@ export const generateJSTool: Tool = {
 
     return writeFileTool.execute({
       filePath: input.filename,
-      content: header + input.code,
+      content: header + "\n" + buildCode(input),
     });
   },
 };

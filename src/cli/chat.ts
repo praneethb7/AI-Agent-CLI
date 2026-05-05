@@ -67,12 +67,10 @@ export async function runChat(options: ChatCommandOptions = {}): Promise<void> {
       const spinner = ora({ text: chalk.dim("Thinking…"), color: "cyan" }).start();
 
       try {
-        const result = await agent.run(trimmed);
         spinner.stop();
-
         process.stdout.write("\n");
-        console.log(chalk.blue.bold("Agent > ") + result.finalResponse);
-        console.log(chalk.dim(`\n  [${result.iterations} iteration(s)]`));
+        const result = await agent.runAgent(trimmed);
+        console.log(chalk.dim(`  [${result.iterations} iteration(s)]`));
         process.stdout.write("\n");
       } catch (err) {
         spinner.fail(chalk.red("Agent error"));

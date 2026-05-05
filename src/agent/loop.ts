@@ -205,6 +205,11 @@ export class AgentLoop {
           succeeded = true;
           if (action === "writeFile" && typeof args["filePath"] === "string") {
             this.createdFiles.push(args["filePath"]);
+          } else if (
+            ["generateHTML", "generateCSS", "generateJS"].includes(action) &&
+            typeof args["filename"] === "string"
+          ) {
+            this.createdFiles.push(args["filename"]);
           }
           break;
         } else {
@@ -260,6 +265,12 @@ export class AgentLoop {
       "",
       `"action" must be one of: ${toolNames}`,
       'Use action="finish" only after you have taken at least one real action. Include a "message" summarizing what was done.',
+      "",
+      "When the task involves generating a website, always follow these steps in order:",
+      '  1. Call generateHTML with args {"filename": "index.html"} — it links styles.css and script.js automatically.',
+      '  2. Call generateCSS with args {"filename": "styles.css"}.',
+      '  3. Call generateJS with args {"filename": "script.js", "features": ["navbarToggle", "smoothScroll", "buttonInteraction"]}.',
+      '  4. Call finish with message "Website generated successfully. Open output/index.html".',
       "",
       "Available tools:",
       toolList,
