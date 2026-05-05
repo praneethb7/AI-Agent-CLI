@@ -29,50 +29,9 @@ export interface NextStep {
 
 const DONE_SIGNALS = ["task complete", "done.", "finished.", "no further steps"];
 
-const SYSTEM_PROMPT = `You are an advanced AI coding agent similar to Cursor.
-
-You can:
-- build applications
-- generate websites
-- read/edit files
-- execute commands
-
-You MUST:
-- think step by step
-- take ONE action at a time
-- use tools to complete tasks
-
-Available actions:
-- generate_html
-- generate_css
-- generate_js
-- write_file
-- read_file
-- edit_file
-- list_files
-- run_command
-- finish
-
-Rules:
-- Never do everything in one step
-- Always break tasks down
-- Prefer modifying files over rewriting
-- Ensure outputs are practical and runnable
-
-Special rule for website cloning:
-If user asks to clone a website (e.g., Scaler Academy):
-- First generate HTML structure
-- Then CSS
-- Then JS
-- Then write files
-
-OUTPUT STRICT JSON:
-{
-  "thought": "...",
-  "action": "...",
-  "input": {...}
-}
-
+const SYSTEM_PROMPT = `AI agent. One action at a time. Output strict JSON only:
+{"thought":"…","action":"…","input":{…}}
+Actions: generate_html|generate_css|generate_js|write_file|read_file|edit_file|list_files|run_command|finish
 No markdown. No extra text.`;
 
 /**
@@ -153,31 +112,28 @@ export async function getNextStep(context: PlannerContext): Promise<string> {
 }
 
 function buildContextMessage(context: PlannerContext): string {
-  const parts: string[] = [`User request: ${context.userInput}`];
+  const parts: string[] = [`Task: ${context.userInput}`];
 
   if (context.previousSteps.length > 0) {
-    const stepLines = context.previousSteps.map(
-      (s) =>
-        `  Step ${s.iteration}: [${s.action}] ${s.thought}\n    Observation: ${s.observation}`
-    );
-    parts.push(`Previous steps:\n${stepLines.join("\n")}`);
-  } else {
-    parts.push("Previous steps: none");
+    // Only keep the last 3 steps and trim observations to avoid token blowup.
+    const recent = context.previousSteps.slice(-3);
+    const stepLines = recent.map((s) => {
+      const obs = s.observation.length > 80 ? s.observation.slice(0, 77) + "…" : s.observation;
+      return `  [${s.action}] → ${obs}`;
+    });
+    parts.push(`Done:\n${stepLines.join("\n")}`);
   }
 
   if (context.filesCreated.length > 0) {
-    parts.push(`Files created so far: ${context.filesCreated.join(", ")}`);
-  } else {
-    parts.push("Files created so far: none");
+    parts.push(`Created: ${context.filesCreated.join(", ")}`);
   }
 
   if (context.lastToolResult !== null) {
-    parts.push(`Last tool result: ${context.lastToolResult}`);
-  } else {
-    parts.push("Last tool result: none");
+    const r = context.lastToolResult;
+    parts.push(`Last: ${r.length > 80 ? r.slice(0, 77) + "…" : r}`);
   }
 
-  parts.push("What is the next single action to take?");
+  parts.push("Next action?");
 
-  return parts.join("\n\n");
+  return parts.join("\n");
 }

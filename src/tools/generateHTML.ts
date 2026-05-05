@@ -24,7 +24,7 @@ function buildLandingPage(title: string, cssFile: string, jsFile: string): strin
   <link rel="stylesheet" href="${cssFile}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&display=swap" rel="stylesheet">
   <script src="${jsFile}" defer></script>
 </head>
 <body>
@@ -76,12 +76,13 @@ function buildLandingPage(title: string, cssFile: string, jsFile: string): strin
         <div class="hero-content">
           <p class="hero-eyebrow">Trusted by 1,00,000+ learners</p>
           <h1 id="hero-heading" class="hero-heading">
-            Advance Your Tech Career with
-            <span class="gradient-text">Industry-Led Mentorship</span>
+            Crack FAANG.<br>
+            Double Your Salary with
+            <span class="gradient-text">Elite Mentorship</span>
           </h1>
           <p class="hero-subtext">
-            Master software engineering, system design, and DSA through live classes,
-            real projects, and 1-on-1 mentoring from top engineers at FAANG companies.
+            Master DSA, system design &amp; backend engineering through live classes,
+            1-on-1 mentoring from FAANG engineers, and real-world projects that get you hired.
           </p>
           <div class="hero-actions">
             <a href="/apply" class="btn btn-primary btn-lg">Get Free Career Counselling</a>
@@ -103,32 +104,36 @@ function buildLandingPage(title: string, cssFile: string, jsFile: string): strin
                 <span class="dot dot--red"></span>
                 <span class="dot dot--yellow"></span>
                 <span class="dot dot--green"></span>
+                <span class="code-window-title">solution.js</span>
               </div>
-              <pre class="code-snippet"><code><span class="kw">function</span> <span class="fn">twoSum</span>(nums, target) {
-  <span class="kw">const</span> map = <span class="kw">new</span> Map();
-  <span class="kw">for</span> (<span class="kw">let</span> i = <span class="num">0</span>; i &lt; nums.length; i++) {
-    <span class="kw">const</span> comp = target - nums[i];
-    <span class="kw">if</span> (map.has(comp))
-      <span class="kw">return</span> [map.get(comp), i];
-    map.set(nums[i], i);
+              <pre class="code-snippet"><code><span class="cmt">// O(n) time · O(n) space</span>
+<span class="kw">function</span> <span class="fn">twoSum</span>(nums, target) {
+  <span class="kw">const</span> map <span class="op">=</span> <span class="kw">new</span> <span class="fn">Map</span>();
+  <span class="kw">for</span> (<span class="kw">let</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> nums.length; i<span class="op">++</span>) {
+    <span class="kw">const</span> comp <span class="op">=</span> target <span class="op">-</span> nums[i];
+    <span class="kw">if</span> (map.<span class="fn">has</span>(comp))
+      <span class="kw">return</span> [map.<span class="fn">get</span>(comp), i];
+    map.<span class="fn">set</span>(nums[i], i);
   }
-}</code></pre>
+}
+
+<span class="cmt">// ✓ Runtime: beats 98.2%</span></code></pre>
             </div>
           </div>
 
           <div class="hero-card hero-card--badge hero-card--offer">
             <span class="badge-icon">🎯</span>
             <div>
-              <strong>Amazon offer</strong>
+              <strong>Amazon SDE-2 Offer</strong>
               <span>₹42 LPA · Placed in 6 months</span>
             </div>
           </div>
 
           <div class="hero-card hero-card--badge hero-card--mentor">
-            <img src="https://ui-avatars.com/api/?name=Rahul+Gupta&background=FF6B35&color=fff&size=40" alt="Mentor Rahul Gupta" width="40" height="40" class="avatar">
+            <img src="https://ui-avatars.com/api/?name=Rahul+Gupta&background=ff7a18&color=fff&size=40" alt="Mentor Rahul Gupta" width="40" height="40" class="avatar">
             <div>
               <strong>Rahul Gupta</strong>
-              <span>Ex-Google · Mentor</span>
+              <span>Ex-Google · Your Mentor</span>
             </div>
           </div>
         </figure>
@@ -262,7 +267,7 @@ function buildLandingPage(title: string, cssFile: string, jsFile: string): strin
               <p>"Scaler's structured DSA curriculum and mock interviews were exactly what I needed. I went from a 6 LPA job to an Amazon SDE-2 offer at 32 LPA in under 8 months."</p>
             </blockquote>
             <footer class="testimonial-author">
-              <img src="https://ui-avatars.com/api/?name=Priya+Sharma&background=FF6B35&color=fff&size=48" alt="Priya Sharma" width="48" height="48" class="avatar">
+              <img src="https://ui-avatars.com/api/?name=Priya+Sharma&background=ff7a18&color=fff&size=48" alt="Priya Sharma" width="48" height="48" class="avatar">
               <div>
                 <strong>Priya Sharma</strong>
                 <span>SDE-2 at Amazon · Batch of 2023</span>

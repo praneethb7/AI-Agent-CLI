@@ -139,7 +139,9 @@ export class AgentLoop {
       this.lastResult = observation;
 
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `Observation: ${observation}` });
+      // Truncate observations — the agent only needs to know success/failure, not full content.
+      const shortObs = observation.length > 120 ? observation.slice(0, 117) + "…" : observation;
+      messages.push({ role: "user", content: `Observation: ${shortObs}` });
     }
 
     if (iterations >= MAX_AGENT_ITERATIONS && !finalResponse) {
@@ -253,30 +255,19 @@ export class AgentLoop {
   }
 
   private buildStructuredSystemPrompt(): string {
-    const tools = this.registry.describe();
-    const toolList = tools.map((t) => `  - "${t.name}": ${t.description}`).join("\n");
-    const toolNames = [...tools.map((t) => t.name), "finish"].join(" | ");
+    const toolNames = [...this.registry.list(), "finish"].join("|");
 
+    // Intentionally terse — every token here costs TPM on every call.
     return [
-      "You are a capable AI agent. Complete the user's task step by step.",
-      "",
-      "Every reply MUST be a single JSON object — no prose, no markdown, just JSON:",
-      '{"thought": "<your reasoning>", "action": "<tool or finish>", "args": {<tool args>}, "message": "<only when action=finish>"}',
-      "",
-      `"action" must be one of: ${toolNames}`,
-      'Use action="finish" only after you have taken at least one real action. Include a "message" summarizing what was done.',
-      "",
-      "When the task involves generating a website, always follow these steps in order:",
-      '  1. Call generateHTML with args {"filename": "index.html"} — it links styles.css and script.js automatically.',
-      '  2. Call generateCSS with args {"filename": "styles.css"}.',
-      '  3. Call generateJS with args {"filename": "script.js", "features": ["navbarToggle", "smoothScroll", "buttonInteraction"]}.',
-      '  4. Call finish with message "Website generated successfully. Open output/index.html".',
-      "",
-      "Available tools:",
-      toolList,
-    ]
-      .filter(Boolean)
-      .join("\n");
+      "AI agent. Reply ONLY with one JSON object, no prose:",
+      '{"thought":"…","action":"…","args":{…},"message":"…(finish only)"}',
+      `action ∈ ${toolNames}`,
+      "finish only after real work; include message.",
+      "Website task order: generateHTML(index.html) → generateCSS(styles.css) → generateJS(script.js) → finish.",
+      'generateHTML args: {"filename":"index.html"}',
+      'generateCSS args: {"filename":"styles.css"}',
+      'generateJS args: {"filename":"script.js","features":["navbarToggle","smoothScroll","buttonInteraction"]}',
+    ].join("\n");
   }
 
   private async executeTools(
@@ -301,14 +292,7 @@ export class AgentLoop {
   }
 
   private buildSystemPrompt(): string {
-    return [
-      "You are a capable AI agent. Think step by step to complete user tasks.",
-      "",
-      this.planner.buildToolManifest(),
-      "",
-      "When the task is complete, say 'Task complete.' without calling any more tools.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const toolNames = this.registry.list().join("|");
+    return `AI agent. Use tools to complete tasks. Tools: ${toolNames}. Say "Task complete." when done.`;
   }
 }

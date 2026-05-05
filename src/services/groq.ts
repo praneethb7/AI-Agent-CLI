@@ -42,6 +42,13 @@ interface GroqAPIResponse {
 
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 
+/** Parse "try again in Xs" from Groq 429 messages. Returns milliseconds. */
+function parseRetryAfterMs(message: string): number {
+  const match = /try again in (\d+(?:\.\d+)?)s/i.exec(message);
+  if (match?.[1]) return Math.ceil(parseFloat(match[1]) * 1000) + 200; // +200ms buffer
+  return 10_000; // safe default
+}
+
 export class GroqService {
   private readonly client: AxiosInstance;
   private readonly model: string;
@@ -51,9 +58,11 @@ export class GroqService {
 
   constructor(config: GroqClientConfig) {
     this.model = config.model ?? "llama-3.3-70b-versatile";
-    this.temperature = config.temperature ?? 0.7;
-    this.maxTokens = config.maxTokens ?? 4096;
-    this.maxRetries = config.maxRetries ?? 2;
+    this.temperature = config.temperature ?? 0.3; // lower = more deterministic JSON
+    // Agent only outputs a small JSON object — 512 tokens is ample.
+    // Reserving 4096 consumed the entire TPM budget in 2 calls.
+    this.maxTokens = config.maxTokens ?? 512;
+    this.maxRetries = config.maxRetries ?? 3;
 
     this.client = axios.create({
       baseURL: config.baseUrl ?? "https://api.groq.com/openai/v1",
@@ -61,7 +70,7 @@ export class GroqService {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
       },
-      timeout: 30_000,
+      timeout: 60_000,
     });
   }
 
@@ -100,16 +109,25 @@ export class GroqService {
       } catch (err) {
         lastError = err;
 
-        const shouldRetry =
-          attempt < this.maxRetries &&
+        const isRetryable =
           isAxiosError(err) &&
           err.response !== undefined &&
           RETRYABLE_STATUS_CODES.has(err.response.status);
 
-        if (!shouldRetry) break;
+        if (!isRetryable || attempt >= this.maxRetries) break;
 
-        // Exponential backoff: 500ms, 1000ms, ...
-        await new Promise((r) => setTimeout(r, 500 * attempt));
+        // On 429 honour the retry window stated by the API instead of guessing.
+        let waitMs: number;
+        if (isAxiosError(err) && err.response?.status === 429) {
+          const apiMessage =
+            (err.response?.data as { error?: { message?: string } })?.error?.message ?? "";
+          waitMs = parseRetryAfterMs(apiMessage);
+          console.error(`  Rate-limited. Waiting ${(waitMs / 1000).toFixed(1)}s before retry ${attempt + 1}/${this.maxRetries}…`);
+        } else {
+          waitMs = 500 * attempt; // exponential backoff for 5xx
+        }
+
+        await new Promise((r) => setTimeout(r, waitMs));
       }
     }
 

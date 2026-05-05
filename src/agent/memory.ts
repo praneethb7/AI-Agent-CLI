@@ -18,7 +18,7 @@ export class AgentMemory {
     this.systemPrompt =
       options.systemPrompt ??
       "You are a helpful AI agent that can use tools to complete tasks.";
-    this.maxMessages = options.maxMessages ?? 50;
+    this.maxMessages = options.maxMessages ?? 12; // 6 iterations × 2 messages max
   }
 
   addUserMessage(content: string): void {
