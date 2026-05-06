@@ -128,6 +128,4 @@ src/
   index.ts           # CLI entry point (commander)
 ```
 
-## License
 
-MIT
